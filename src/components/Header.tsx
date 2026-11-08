@@ -522,19 +522,6 @@ export const Header: React.FC<HeaderProps> = ({ currentView, viewParam = '', onN
                 <User className="w-4 h-4 text-slate-500" />
                 <span>My Account (আমার প্রোফাইল)</span>
               </button>
-
-              {/* Only Admin Panel entry in entire app: 3-line drawer menu with smile emoji and ap name */}
-              <button
-                id="drawer-discreet-ap-btn"
-                onClick={() => {
-                  onNavigate('admin');
-                  setIsMobileMenuOpen(false);
-                }}
-                className="w-full text-left px-3 py-2.5 rounded-xl text-slate-500 hover:text-slate-800 hover:bg-slate-100 text-xs font-semibold flex items-center justify-between transition-colors cursor-pointer"
-                title="ap 😊"
-              >
-                <span>ap 😊</span>
-              </button>
             </div>
 
             {/* Categories List in Drawer */}

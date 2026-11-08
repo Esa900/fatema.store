@@ -34,17 +34,44 @@ import { StoreService } from './services/store';
 function getInitialNavState(): { view: string; param?: string } {
   if (typeof window === 'undefined') return { view: 'home' };
   try {
-    const hash = window.location.hash.replace(/^#\/?/, '').trim();
+    const rawPath = window.location.pathname.replace(/^\/+|\/+$/g, '').toLowerCase();
+    const hash = window.location.hash.replace(/^#\/?/, '').trim().toLowerCase();
+
+    // 1. Direct path check for domain/admin or domain/admin/...
+    if (rawPath === 'admin' || rawPath.startsWith('admin/')) {
+      const parts = rawPath.split('/');
+      const param = parts.slice(1).join('/') ? decodeURIComponent(parts.slice(1).join('/')) : undefined;
+      return { view: 'admin', param };
+    }
+
+    // 2. Direct hash check for domain/#admin or domain/#/admin
+    if (hash === 'admin' || hash.startsWith('admin/')) {
+      const parts = hash.split('/');
+      const param = parts.slice(1).join('/') ? decodeURIComponent(parts.slice(1).join('/')) : undefined;
+      return { view: 'admin', param };
+    }
+
+    // 3. Other hash routes (e.g. #shop, #category-products/honey, #cart, #checkout)
     if (hash) {
       const parts = hash.split('/');
       const view = parts[0];
       const param = parts.slice(1).join('/') ? decodeURIComponent(parts.slice(1).join('/')) : undefined;
       if (view) return { view, param };
     }
+
+    // 4. Other pathname routes (e.g. /shop, /cart, /checkout)
+    if (rawPath && rawPath !== '') {
+      const parts = rawPath.split('/');
+      const view = parts[0];
+      const param = parts.slice(1).join('/') ? decodeURIComponent(parts.slice(1).join('/')) : undefined;
+      if (view) return { view, param };
+    }
+
+    // 5. Session storage fallback (never auto-restore 'admin' unless explicitly in the URL)
     const saved = sessionStorage.getItem('khan_store_view');
     if (saved) {
       const parsed = JSON.parse(saved);
-      if (parsed && parsed.view) return parsed;
+      if (parsed && parsed.view && parsed.view !== 'admin') return parsed;
     }
   } catch (e) {
     // fallback
@@ -58,11 +85,11 @@ function MainApp() {
   const [currentView, setCurrentView] = useState<string>(initialNav.view);
   const [viewParam, setViewParam] = useState<string | undefined>(initialNav.param);
 
-  // Sync hash changes (e.g. browser back/forward or direct URL edits)
+  // Sync URL changes (e.g. typing domain/admin, browser back/forward or hash changes)
   useEffect(() => {
-    const handleHashChange = () => {
+    const handleUrlChange = () => {
       const nav = getInitialNavState();
-      // If user navigates away from admin via back button
+      // If user navigates away from admin via URL / back button
       if (currentView === 'admin' && nav.view !== 'admin') {
         StoreService.setAdminSession(false);
       }
@@ -70,8 +97,12 @@ function MainApp() {
       setViewParam(nav.param);
     };
 
-    window.addEventListener('hashchange', handleHashChange);
-    return () => window.removeEventListener('hashchange', handleHashChange);
+    window.addEventListener('hashchange', handleUrlChange);
+    window.addEventListener('popstate', handleUrlChange);
+    return () => {
+      window.removeEventListener('hashchange', handleUrlChange);
+      window.removeEventListener('popstate', handleUrlChange);
+    };
   }, [currentView]);
 
   // Global Modals State
@@ -137,9 +168,19 @@ function MainApp() {
 
     try {
       sessionStorage.setItem('khan_store_view', JSON.stringify({ view, param }));
-      const newHash = param ? `#${view}/${encodeURIComponent(param)}` : `#${view}`;
-      if (window.location.hash !== newHash) {
-        window.history.pushState(null, '', newHash);
+      
+      if (view === 'admin') {
+        const targetPath = param ? `/admin/${encodeURIComponent(param)}` : '/admin';
+        if (window.location.pathname !== targetPath) {
+          window.history.pushState(null, '', targetPath);
+        }
+      } else {
+        // If navigating to regular storefront view, clear /admin from pathname
+        const newHash = param ? `#${view}/${encodeURIComponent(param)}` : (view === 'home' ? '' : `#${view}`);
+        const targetUrl = newHash ? `/${newHash}` : '/';
+        if (window.location.pathname !== '/' || window.location.hash !== newHash) {
+          window.history.pushState(null, '', targetUrl);
+        }
       }
     } catch (e) {
       // ignore
@@ -157,13 +198,15 @@ function MainApp() {
   return (
     <QuickOrderProvider onOrderSuccess={handleOrderPlaced}>
       <div className="min-h-screen flex flex-col bg-slate-50 text-slate-800 font-sans">
-        {/* Header is hidden or minimized if in full admin screen, but kept accessible */}
-      <Header
-        currentView={currentView}
-        viewParam={viewParam}
-        onNavigate={handleNavigate}
-        onOpenAreaModal={() => setIsAreaModalOpen(true)}
-      />
+        {/* Header is hidden in admin view for a completely isolated and focused admin experience */}
+        {!isAdminView && (
+          <Header
+            currentView={currentView}
+            viewParam={viewParam}
+            onNavigate={handleNavigate}
+            onOpenAreaModal={() => setIsAreaModalOpen(true)}
+          />
+        )}
 
       {/* Main Content Area */}
       <main className={isAdminView ? "flex-1 w-full bg-slate-100" : "flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-4 sm:pt-6"}>
